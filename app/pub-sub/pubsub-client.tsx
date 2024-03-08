@@ -5,6 +5,8 @@ import { AblyProvider, useChannel } from "ably/react"
 import { MouseEventHandler, MouseEvent, useState } from 'react'
 import Logger, { LogEntry } from '../../components/logger';
 import SampleHeader from '../../components/SampleHeader';
+import useSound from "use-sound";
+
 
 export default function PubSubClient() {
 
@@ -20,6 +22,7 @@ export default function PubSubClient() {
           </div>
           <PubSubMessages />
         </div>      
+        <TimerGroup/>
       </div>
     </AblyProvider>
   )
@@ -71,6 +74,218 @@ function PubSubMessages() {
         </div>
       </div>
       <Logger logEntries={logs}  displayHeader={true}  />
+      
     </>
   )
 }
+function TimerGroup() {
+  const [playActive] = useSound("/sounds/switch-on.mp3", { volume: 1 });
+  const { channel, ably } = useChannel("timer-group", (message:any) => {
+    if (message.data.action === "run") {
+      document.querySelectorAll(".start-button").forEach((el) => (el as HTMLElement).click());
+    }
+    if (message.data.action === "reset") {
+      document.querySelectorAll(".reset-button").forEach((el) => (el as HTMLElement).click());
+    }
+  });
+  return (
+    <section className="timer-container">
+      <div className="timer-wrap">
+        <h2>Timer 1</h2>
+        <Timer index={'1'}/>
+      </div>
+      <div className="timer-wrap">
+        <h2>Timer 2</h2>
+        <Timer index={'2'}/>
+      </div>
+      <div className="timer-wrap">
+        <h2>Timer 3</h2>
+        <Timer index={'3'}/>
+      </div>
+      <div className="main-group-button">
+        <button
+          onClick={() => {
+            channel.publish({ name: "timer", data: { action: "run" } });
+          }}
+          onMouseDown={()=>{playActive()}}
+        >
+          START
+        </button>
+        <button
+          onClick={() => {
+            channel.publish({ name: "timer", data: { action: "reset" } });
+          }}
+          onMouseDown={()=>{playActive()}}
+        >
+          RESET
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function Timer({index}:any) {
+  const { channel, ably } = useChannel(`timer-${index}`, (message:any) => {
+    if (message.data.action === "stop") {
+      stop();
+    }
+    if (message.data.action === "resume") {
+      resume();
+    }
+    if (message.data.action === "reset") {
+      reset();
+    }
+  });
+  const [time, setTime] = useState({ ms: 0, s: 0, m: 0, h: 0 });
+  const [interv, setInterv] = useState<number>();
+  const [status, setStatus] = useState(0);
+  // Not started = 0
+  // started = 1
+  // stopped = 2
+
+  const start = () => {
+    run();
+    setStatus(1);
+    setInterv(setInterval(run, 10) as any);
+  };
+
+  var updatedMs = time.ms,
+    updatedS = time.s,
+    updatedM = time.m,
+    updatedH = time.h;
+
+  const run = () => {
+    if (updatedM === 60) {
+      updatedH++;
+      updatedM = 0;
+    }
+    if (updatedS === 60) {
+      updatedM++;
+      updatedS = 0;
+    }
+    if (updatedMs === 100) {
+      updatedS++;
+      updatedMs = 0;
+    }
+    updatedMs++;
+    return setTime({ ms: updatedMs, s: updatedS, m: updatedM, h: updatedH });
+  };
+
+  const stop = () => {
+    clearInterval(interv);
+    setStatus(2);
+  };
+
+  const reset = () => {
+    clearInterval(interv);
+    setStatus(0);
+    setTime({ ms: 0, s: 0, m: 0, h: 0 });
+  };
+
+  const resume = () => start();
+
+  return (
+    <div className="main-section">
+      <div className="clock-holder">
+        <div className="stopwatch">
+          <DisplayComponent time={time} />
+          <BtnComponent
+            status={status}
+            stop={() => {
+              channel.publish({ name: "timer", data: { action: "stop" } });
+            }}
+            start={start}
+            resume={() => {
+              channel.publish({ name: "timer", data: { action: "resume" } });
+            }}
+            reset={() => {
+              channel.publish({ name: "timer", data: { action: "reset" } });
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+import React from 'react';
+
+function DisplayComponent(props:any) {
+  const h = () => {
+     if(props.time.h === 0){
+       return '';
+     }else {
+       return <span>{(props.time.h >= 10)? props.time.h : "0"+ props.time.h}</span>;
+     }
+  }
+  return (
+    <div>
+       {h()}&nbsp;&nbsp;
+       <span>{(props.time.m >= 10)? props.time.m : "0"+ props.time.m}</span>&nbsp;<div className='separater'>:</div>&nbsp;
+       <span>{(props.time.s >= 10)? props.time.s : "0"+ props.time.s}</span>&nbsp;<div className='separater'>:</div>&nbsp;
+       <span>{(props.time.ms >= 10)? props.time.ms : "0"+ props.time.ms}</span>
+    </div>
+  );
+}
+function BtnComponent(props:any) {
+  const [playActive] = useSound("/sounds/switch-on.mp3", { volume: 1 });
+  return (
+    <>
+      {props.status === 0 ? (
+        <button
+          style={{opacity:0, height:0, overflow:"hidden", padding:0, margin:0}}
+          className="stopwatch-btn stopwatch-btn-gre start-button"
+          onClick={props.start}
+          onMouseDown={()=>{playActive()}}
+        >
+        </button>
+      ) : (
+        ""
+      )}
+
+      {props.status === 1 ? (
+        <div>
+          <button
+            className="stopwatch-btn stopwatch-btn-red"
+            onClick={props.stop}
+            onMouseDown={()=>{playActive()}}
+          >
+            Stop
+          </button>
+          <button
+            className="stopwatch-btn stopwatch-btn-yel reset-button"
+            onClick={props.reset}
+            onMouseDown={()=>{playActive()}}
+          >
+            Reset
+          </button>
+        </div>
+      ) : (
+        ""
+      )}
+
+      {props.status === 2 ? (
+        <div>
+          <button
+            className="stopwatch-btn stopwatch-btn-gre"
+            onClick={props.resume}
+            onMouseDown={()=>{playActive()}}
+          >
+            Resume
+          </button>
+          <button
+            className="stopwatch-btn stopwatch-btn-yel reset-button"
+            onClick={props.reset}
+            onMouseDown={()=>{playActive()}}
+          >
+            Reset
+          </button>
+        </div>
+      ) : (
+        ""
+      )}
+    </>
+  );
+}
+
+
